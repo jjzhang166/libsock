@@ -1,0 +1,10 @@
+﻿  libsock.cpp
+libsock.cpp(1): warning C4005: “LIBSOCK_EXPORTS”: 宏重定义
+  libsock.cpp(1): note: 命令行参数: 参见前面的“LIBSOCK_EXPORTS”定义
+    正在创建库 F:\code\vs\fileTrans\x64\Release\libsockx64.lib 和对象 F:\code\vs\fileTrans\x64\Release\libsockx64.exp
+  正在生成代码
+  0 of 421 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
+  已完成代码的生成
+  libsock.vcxproj -> F:\code\vs\fileTrans\x64\Release\libsockx64.dll
