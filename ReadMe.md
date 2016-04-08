@@ -4,7 +4,16 @@
 
 
 #	更新日志：
-##	V1.1：
+
+##	V1.3(2016-04-08):
+###		1.新增一对多文件传输
+###		2.改变数据包大小
+
+##	V1.2(2016-04-08):
+###		1.新增文件传输类
+###		2.将错误枚举改为错误枚举类
+
+##	V1.1(2016-04-08)：
 ###		1.回调函数添加otherParam，方便参数传递
 			
 
@@ -56,3 +65,31 @@
 ###			调用init()方法
 ###			调用recv()方法
 ###			使用结束调用close方法
+
+##		文件传输发送端：
+###			SockInit()初始化
+###			MakeSocket()创建套接字
+###			BindSocket()绑定套接字
+###			创建TCPFileTrans对象
+###			SendFile()发送
+###			使用结束调用CloseSock()
+###			SockClean()清理
+
+##		文件传输接收端：
+###			SockInit()初始化
+###			MakeSocket()创建套接字
+###			BindSocket()绑定套接字
+###			创建TCPFileTrans对象
+###			ReceiveFile()接收
+###			使用结束调用CloseSock()
+###			SockClean()清理
+
+##		一对多文件传输
+###			SockInit()初始化
+###			MakeSocket()创建套接字
+###			BindSocket()绑定套接字
+###			创建TCPFileTransEx对象
+###			监听套接字，将新来的socket加入列表
+###			SendFile()发送
+###			使用结束调用CloseSock()
+###			SockClean()清理

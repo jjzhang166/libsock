@@ -4,7 +4,16 @@
 
 
 //	更新日志：
-//	V1.1：
+//
+//	V1.3(2016-04-08):
+//		1.新增一对多文件传输
+//		2.改变数据包大小
+//
+//	V1.2(2016-04-08):
+//		1.新增文件传输类
+//		2.将错误枚举改为错误枚举类
+//
+//	V1.1(2016-04-08)：
 //		1.回调函数添加otherParam，方便参数传递
 //			
 
@@ -56,6 +65,36 @@
 //			调用init()方法
 //			调用recv()方法
 //			使用结束调用close方法
+//
+//		文件传输发送端：
+//			SockInit()初始化
+//			MakeSocket()创建套接字
+//			BindSocket()绑定套接字
+//			创建TCPFileTrans对象
+//			SendFile()发送
+//			使用结束调用CloseSock()
+//			SockClean()清理
+//
+//		文件传输接收端：
+//			SockInit()初始化
+//			MakeSocket()创建套接字
+//			BindSocket()绑定套接字（可选）
+//			创建TCPFileTrans对象
+//			ReceiveFile()接收
+//			使用结束调用CloseSock()
+//			SockClean()清理
+//
+//		一对多文件传输
+//			SockInit()初始化
+//			MakeSocket()创建套接字
+//			BindSocket()绑定套接字
+//			创建TCPFileTransEx对象
+//			监听套接字，将新来的socket加入列表
+//			SendFile()发送
+//			使用结束调用CloseSock()
+//			SockClean()清理
+
+
 
 #ifndef LIBSOCK_H_
 #define LIBSOCK_H_
@@ -68,14 +107,18 @@
 
 
 #include <windows.h>
+#include <set>
 
+#define MSGBUFFERSIZE 32768 				//消息缓冲区大小
+#define MAXPATHLEN 4096						//文件名最大长度
+#define MAXTRYTIME 10000					//文件重名尝试次数
 
-enum LIBSOCK_API CONNECTTYPE {			//连接协议类型
+enum class LIBSOCK_API CONNECTTYPE {			//连接协议类型
 	TCP,								//TCP连接
 	UDP									//UDP连接
 };
 
-enum LIBSOCK_API SOCKERR {			//接收错误类型返回值
+enum LIBSOCK_API SOCKERR {				//接收错误类型返回值
 	NOERR,								//没有错误，接收到消息
 	NOMESSAGE,							//没有消息可以接收
 	DISCONNECT							//连接已断开
@@ -279,6 +322,69 @@ public:
 private:
 	TCPRECEIVECALLBACK receiveCb;
 	SOCKET sock;
+};
+
+
+
+
+#define FILEHEADERSIZE 1024			//文件头大小
+
+enum class LIBSOCK_API FILETRANSERROR {			//文件传输错误
+	NOERR,										//无错误
+	FILEOPENERROR,								//文件打开错误
+	FILESIZEERROR,								//获取文件大小错误
+	FILEREADERROR,								//读取文件错误
+	FILEWRITEERROR,								//写入文件错误
+	SOCKETERROR,								//套接字错误
+	EMPTYLIST,									//空列表
+	ALLSOCKETERROR								//所有套接字全部失败
+};
+
+//TCP文件传输类
+class LIBSOCK_API TCPFileTrans {
+public:
+
+	//	构造一个文件传输类
+	//		sock：		使用的套接字
+	TCPFileTrans(SOCKET sock);
+
+	//	发送文件
+	//		fileName：	要发送的文件路径
+	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
+	FILETRANSERROR SendFile(const char *fileName);
+
+	//	接收文件
+	//		dir：		接收文件存放路径
+	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
+	FILETRANSERROR RecvFile(const char*dir,char *fullPath=0,int fullPathLen=0);
+private:
+	SOCKET sock;
+};
+
+
+class LIBSOCK_API TCPFileTransEx {
+public:
+	TCPFileTransEx(std::set<SOCKET> sockList=std::set<SOCKET>());
+
+	//	发送文件
+	//		fileName：	要发送的文件路径
+	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
+	FILETRANSERROR SendFile(const char *fileName);
+
+	//	添加socket
+	//		sock：	要添加的socket
+	void AddSock(SOCKET sock);
+
+	//	删除Socket
+	//		sock：	要删除的socket
+	void RemoveSock(SOCKET sock);
+
+	//	获取错误Socket列表
+	//	返回值：返回出错的socket集合
+	std::set<SOCKET> GetErrSockList();
+private:
+	std::set<SOCKET> sockList;
+	std::set<SOCKET> errorSockList;
 };
 
 

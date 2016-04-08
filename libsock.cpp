@@ -3,7 +3,10 @@
 #include <thread>
 #include <cstdlib>
 #include <climits>
+#include <string>
 #pragma comment(lib,"ws2_32.lib")
+#pragma comment(lib,"Comdlg32.lib")
+
 
 static bool ifContinue[USHRT_MAX];
 
@@ -38,10 +41,10 @@ LIBSOCK_API void SockClean() {
 LIBSOCK_API SOCKET MakeSocket(CONNECTTYPE type) {
 	SOCKET sock;
 	switch(type) {
-	case TCP:
+	case CONNECTTYPE::TCP:
 		sock= socket(AF_INET, SOCK_STREAM, 0);
 		break;
-	case UDP:
+	case CONNECTTYPE::UDP:
 		sock= socket(AF_INET, SOCK_DGRAM, 0);
 		break;
 	default:
@@ -93,7 +96,8 @@ LIBSOCK_API bool ListenTcpSocket(
 
 
 LIBSOCK_API bool TCPSend(SOCKET sock, const char*buffer, const int len) {
-	if(len != ::send(sock, buffer, len, 0)) {
+	int sz = 0;
+	if(len != (sz=::send(sock, buffer, len, 0))) {
 		return FALSE;
 	} else {
 		return TRUE;
@@ -172,7 +176,7 @@ bool TCPServer::init() {
 
 
 bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void *otherParam) {
-	sock = MakeSocket(TCP);
+	sock = MakeSocket(CONNECTTYPE::TCP);
 	if(-1 == sock)
 		return false;
 	if(!BindSocket(sock, port)) {
@@ -188,10 +192,10 @@ bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void 
 			SOCKET serConn = accept(sock, (SOCKADDR*)&clientAddr, &len);
 			std::thread(connCb, serConn, clientAddr,otherParam).join();
 			std::thread([=]() {
-				char buffer[4096];
+				char buffer[MSGBUFFERSIZE];
 				int len = 0;
 				while(1) {
-					len = 4096;
+					len = MSGBUFFERSIZE;
 					SOCKERR ret = TCPReceive(serConn, buffer, &len);
 					if(ret == NOERR) {
 						std::thread(receiveCb, serConn, clientAddr, buffer, len,otherParam).join();
@@ -225,7 +229,7 @@ bool UDPSocket::init() {
 
 
 bool UDPSocket::recv(const unsigned short port, void *otherParam) {
-	sock = MakeSocket(UDP);
+	sock = MakeSocket(CONNECTTYPE::UDP);
 	if(-1 == sock) {
 		return false;
 	}
@@ -235,11 +239,11 @@ bool UDPSocket::recv(const unsigned short port, void *otherParam) {
 	ifContinue[sock] = true;
 	std::thread([=]() {
 		SOCKADDR_IN clientAddr;
-		char buffer[4096];
+		char buffer[MSGBUFFERSIZE];
 		int len = 0;
 		while(ifContinue[sock]) {
-			memset(buffer, 0, 4096);
-			len = 4096;
+			memset(buffer, 0, MSGBUFFERSIZE);
+			len = MSGBUFFERSIZE;
 			if(UDPReceive(sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
 				std::thread(receiveCb, sock, clientAddr, buffer, len,otherParam).join();
 			}
@@ -265,7 +269,7 @@ bool TCPClient::init() {
 }
 
 bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort,void *otherParam) {
-	sock = MakeSocket(TCP);
+	sock = MakeSocket(CONNECTTYPE::TCP);
 	if(-1 == sock)
 		return false;
 	if(!BindSocket(sock, selfPort)) {
@@ -277,10 +281,10 @@ bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned
 	ifContinue[sock] = true;
 	std::thread(connCb, sock, addr,otherParam).join();
 	std::thread([=]() {
-		char buffer[4096];
+		char buffer[MSGBUFFERSIZE];
 		int len = 0;
 		while(ifContinue[sock]) {
-			len = 4096;
+			len = MSGBUFFERSIZE;
 			SOCKERR ret = TCPReceive(sock, buffer, &len);
 			if(ret == NOERR) {
 				std::thread(receiveCb, sock, addr, buffer, len,otherParam).join();
@@ -309,4 +313,229 @@ SOCKET TCPClient::getSock() {
 
 SOCKET UDPSocket::getSock() {
 	return sock;
+}
+
+TCPFileTrans::TCPFileTrans(SOCKET sock_t) :sock(sock_t){
+}
+
+
+void MakeHrader(char *buffer,const char*fileName,const LONGLONG size){
+	memset(buffer, 0, FILEHEADERSIZE);
+	memcpy(buffer, &size, sizeof(LONGLONG));
+	GetFileTitleA(fileName, buffer + sizeof(LONGLONG), FILEHEADERSIZE - sizeof(LONGLONG));
+}
+
+
+
+FILETRANSERROR TCPFileTrans::SendFile(const char * fileName) {
+	HANDLE file = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(file == INVALID_HANDLE_VALUE) {
+		return FILETRANSERROR::FILEOPENERROR;
+	}
+	LARGE_INTEGER fileSize;
+	if(!GetFileSizeEx(file, &fileSize)) {
+		return FILETRANSERROR::FILESIZEERROR;
+	}
+	LONGLONG lFileSize = fileSize.QuadPart;
+	char headerBuffer[FILEHEADERSIZE];
+	MakeHrader(headerBuffer, fileName, lFileSize);
+	if(!TCPSend(sock, headerBuffer, FILEHEADERSIZE)) {
+		return FILETRANSERROR::SOCKETERROR;
+	}
+	char buffer[MSGBUFFERSIZE];
+	LONGLONG lastSize = lFileSize;
+	DWORD readSize=0;
+	while(lastSize) {
+		if(ReadFile(file, buffer, MSGBUFFERSIZE, &readSize, NULL)) {
+			lastSize -= readSize;
+			if(!TCPSend(sock,buffer,readSize)) {
+				CloseHandle(file);
+				return FILETRANSERROR::SOCKETERROR;
+			}
+		} else {
+			CloseHandle(file);
+			return FILETRANSERROR::FILEREADERROR;
+		}
+	}
+	CloseHandle(file);
+	return FILETRANSERROR::NOERR;
+}
+
+
+std::string getFileNamePart(const std::string fullFileName) {
+	int pos = fullFileName.rfind(".");
+	if(pos == std::string::npos) {
+		return fullFileName;
+	} else {
+		return std::string(fullFileName.begin(), fullFileName.begin() + pos);
+	}
+}
+
+std::string getFileNameExt(const std::string fullFileName) {
+	int pos = fullFileName.rfind(".");
+	if(pos == std::string::npos) {
+		return std::string();
+	} else {
+		return std::string(fullFileName.begin()+pos+1, fullFileName.end());
+	}
+}
+
+
+FILETRANSERROR TCPFileTrans::RecvFile(const char * dir,char*fullPath,int fullPathLen) {
+	char buffer[MSGBUFFERSIZE];
+	char fileHeader[FILEHEADERSIZE];
+	LONGLONG totalRecvSize = 0;
+	int recvSize = 0;
+	SOCKERR sockErr;
+	while(totalRecvSize < FILEHEADERSIZE) {
+		recvSize = MSGBUFFERSIZE;
+		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::NOERR) {
+			if(totalRecvSize + recvSize>=FILEHEADERSIZE) {
+				memcpy(fileHeader + totalRecvSize, buffer, FILEHEADERSIZE-totalRecvSize);
+			} else {
+				memcpy(fileHeader + totalRecvSize, buffer, recvSize);
+			}
+			totalRecvSize += recvSize;
+		} else if(sockErr==SOCKERR::DISCONNECT){
+			return FILETRANSERROR::SOCKETERROR;
+		} 
+	}
+	LONGLONG fileSize = 0;
+	memcpy(&fileSize, fileHeader, sizeof(LONGLONG));
+	char fileName[MAXPATHLEN];
+	char dirF[FILEHEADERSIZE];
+	if(dir == 0) {
+		dir = ".\\";
+	}
+	strcpy_s(dirF, FILEHEADERSIZE, dir);
+	if(strlen(dirF) != 0) {
+		if(dirF[strlen(dirF) - 1] != '\\') {
+			strcat_s(dirF,FILEHEADERSIZE, "\\");
+		}
+	}
+	strcpy_s(fileName, MAXPATHLEN, dirF);
+	strcpy_s(fileName+strlen(dirF), MAXPATHLEN-strlen(dirF), fileHeader + sizeof(LONGLONG));
+	HANDLE file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(file == INVALID_HANDLE_VALUE) {
+		std::string fileNameExt = getFileNameExt(fileName);
+		std::string fileNamePart = getFileNamePart(fileName);
+		for(int i = 0;i < MAXTRYTIME;++i) {
+			strcpy_s(fileName, MAXPATHLEN, (fileNamePart+"("+std::to_string(i)+")." + fileNameExt).c_str());
+			file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+			if(file != INVALID_HANDLE_VALUE) {
+				goto openFileSucc;
+			}
+		}
+		return FILETRANSERROR::FILEOPENERROR;
+	}
+openFileSucc:
+	DWORD writeSize=0;
+	if(!WriteFile(file, buffer, totalRecvSize - FILEHEADERSIZE, &writeSize, NULL)) {
+		CloseHandle(file);
+		return FILETRANSERROR::FILEWRITEERROR;
+	}
+	if(writeSize != totalRecvSize - FILEHEADERSIZE) {
+		CloseHandle(file);
+		return FILETRANSERROR::FILEWRITEERROR;
+	}
+	totalRecvSize -= FILEHEADERSIZE;
+	while(totalRecvSize < fileSize) {
+		recvSize = MSGBUFFERSIZE;
+		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::DISCONNECT) {
+			CloseHandle(file);
+			return FILETRANSERROR::SOCKETERROR;
+		} else if(sockErr==SOCKERR::NOMESSAGE){
+			continue;
+		}
+		if(!WriteFile(file, buffer, recvSize, &writeSize, NULL)) {
+			CloseHandle(file);
+			return FILETRANSERROR::FILEWRITEERROR;
+		}
+		if(writeSize != recvSize) {
+			CloseHandle(file);
+			return FILETRANSERROR::FILEWRITEERROR;
+		}
+		totalRecvSize += recvSize;
+	}
+	CloseHandle(file);
+	if(fullPathLen != 0) {
+		strcpy_s(fullPath, fullPathLen, fileName);
+	}
+	return FILETRANSERROR::NOERR;
+}
+
+
+
+TCPFileTransEx::TCPFileTransEx( std::set<SOCKET> sockList_t):sockList(sockList_t) {
+
+}
+
+FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
+	HANDLE file = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(file == INVALID_HANDLE_VALUE) {
+		return FILETRANSERROR::FILEOPENERROR;
+	}
+	LARGE_INTEGER fileSize;
+	if(!GetFileSizeEx(file, &fileSize)) {
+		return FILETRANSERROR::FILESIZEERROR;
+	}
+	LONGLONG lFileSize = fileSize.QuadPart;
+	if(sockList.empty()) {
+		CloseHandle(file);
+		return FILETRANSERROR::EMPTYLIST;
+	}
+	errorSockList.clear();
+	std::set<SOCKET> sockList = this->sockList;
+	char headerBuffer[FILEHEADERSIZE];
+	MakeHrader(headerBuffer, fileName, lFileSize);
+	for(auto p : sockList) {
+		if(!TCPSend(p, headerBuffer, FILEHEADERSIZE)) {
+			errorSockList.insert(p);
+		}
+	}
+	for(auto p : errorSockList) {
+		sockList.erase(p);
+	}
+	if(sockList.empty()) {
+		CloseHandle(file);
+		return FILETRANSERROR::ALLSOCKETERROR;
+	}
+	char buffer[MSGBUFFERSIZE];
+	LONGLONG lastSize = lFileSize;
+	DWORD readSize = 0;
+	while(lastSize) {
+		if(ReadFile(file, buffer, MSGBUFFERSIZE, &readSize, NULL)) {
+			lastSize -= readSize;
+			for(auto p : sockList) {
+				if(!TCPSend(p, buffer, readSize)) {
+					errorSockList.insert(p);
+				}
+			}
+			for(auto p : errorSockList) {
+				sockList.erase(p);
+			}
+			if(sockList.empty()) {
+				CloseHandle(file);
+				return FILETRANSERROR::ALLSOCKETERROR;
+			}
+		} else {
+			CloseHandle(file);
+			return FILETRANSERROR::FILEREADERROR;
+		}
+	}
+	CloseHandle(file);
+	return FILETRANSERROR::NOERR;
+}
+
+
+void TCPFileTransEx::AddSock(SOCKET sock) {
+	sockList.insert(sock);
+}
+
+void TCPFileTransEx::RemoveSock(SOCKET sock) {
+	sockList.erase(sock);
+}
+
+std::set<SOCKET> TCPFileTransEx::GetErrSockList() {
+	return errorSockList;
 }
