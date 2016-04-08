@@ -72,7 +72,8 @@ LIBSOCK_API bool BindSocket(
 LIBSOCK_API bool ListenTcpSocket(
 	SOCKET sock,
 	TCPCONNCALLBACK callBack,
-	const int maxClientNum
+	const int maxClientNum,
+	void *otherParam
 	) {
 	if(::listen(sock, maxClientNum))
 		return FALSE;
@@ -82,7 +83,7 @@ LIBSOCK_API bool ListenTcpSocket(
 			SOCKADDR_IN clientAddr;
 			int len = sizeof(clientAddr);
 			SOCKET serConn = accept(sock, (SOCKADDR*)&clientAddr, &len);
-			std::thread(callBack, serConn, clientAddr).detach();
+			std::thread(callBack, serConn, clientAddr,otherParam).detach();
 		}
 	}).detach();
 	return TRUE;
@@ -149,11 +150,11 @@ LIBSOCK_API SOCKADDR_IN MakeAddr(const char* ipStr, const unsigned short port) {
 	return addr;
 }
 
-LIBSOCK_API void DEFAULTTCPCONNCALLBACK(SOCKET clientSock, SOCKADDR_IN addr) {}
+LIBSOCK_API void DEFAULTTCPCONNCALLBACK(SOCKET clientSock, SOCKADDR_IN addr, void *otherParam) {}
 
-LIBSOCK_API void DEFAULTTCPRECEIVECALLBACK(SOCKET clientSock, SOCKADDR_IN addr, const char * buffer, int len) {}
+LIBSOCK_API void DEFAULTTCPRECEIVECALLBACK(SOCKET clientSock, SOCKADDR_IN addr, const char * buffer, int len, void *otherParam) {}
 
-LIBSOCK_API void DEFAULTTCPCLOSECALLBACK(SOCKADDR_IN addr) {}
+LIBSOCK_API void DEFAULTTCPCLOSECALLBACK(SOCKADDR_IN addr, void *otherParam) {}
 
 
 
@@ -170,7 +171,7 @@ bool TCPServer::init() {
 }
 
 
-bool TCPServer::listen(const unsigned short port, int const  maxClientNum) {
+bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void *otherParam) {
 	sock = MakeSocket(TCP);
 	if(-1 == sock)
 		return false;
@@ -185,22 +186,22 @@ bool TCPServer::listen(const unsigned short port, int const  maxClientNum) {
 			SOCKADDR_IN clientAddr;
 			int len = sizeof(clientAddr);
 			SOCKET serConn = accept(sock, (SOCKADDR*)&clientAddr, &len);
-			std::thread(connCb, serConn, clientAddr).join();
-			std::thread([=](SOCKET serConn, SOCKADDR_IN clientAddr) {
+			std::thread(connCb, serConn, clientAddr,otherParam).join();
+			std::thread([=]() {
 				char buffer[4096];
 				int len = 0;
 				while(1) {
 					len = 4096;
 					SOCKERR ret = TCPReceive(serConn, buffer, &len);
 					if(ret == NOERR) {
-						std::thread(receiveCb, serConn, clientAddr, buffer, len).join();
+						std::thread(receiveCb, serConn, clientAddr, buffer, len,otherParam).join();
 					} else if(ret == DISCONNECT) {
-						std::thread(closeCb, clientAddr).join();
+						std::thread(closeCb, clientAddr,otherParam).join();
 						CloseSock(serConn);
 						break;
 					}
 				}
-			}, serConn, clientAddr).detach();
+			}).detach();
 		}
 		CloseSock(sock);
 	}).detach();
@@ -223,7 +224,7 @@ bool UDPSocket::init() {
 
 
 
-bool UDPSocket::recv(const unsigned short port) {
+bool UDPSocket::recv(const unsigned short port, void *otherParam) {
 	sock = MakeSocket(UDP);
 	if(-1 == sock) {
 		return false;
@@ -240,7 +241,7 @@ bool UDPSocket::recv(const unsigned short port) {
 			memset(buffer, 0, 4096);
 			len = 4096;
 			if(UDPReceive(sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
-				std::thread(receiveCb, sock, clientAddr, buffer, len).join();
+				std::thread(receiveCb, sock, clientAddr, buffer, len,otherParam).join();
 			}
 		}
 		CloseSock(sock);
@@ -263,7 +264,7 @@ bool TCPClient::init() {
 	return SockInit();
 }
 
-bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort) {
+bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort,void *otherParam) {
 	sock = MakeSocket(TCP);
 	if(-1 == sock)
 		return false;
@@ -274,22 +275,22 @@ bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned
 	if(!TCPConnect(sock, (SOCKADDR*)&addr, sizeof(SOCKADDR_IN)))
 		return FALSE;
 	ifContinue[sock] = true;
-	std::thread(connCb, sock, addr).join();
-	std::thread([=](SOCKET serConn, SOCKADDR_IN addr) {
+	std::thread(connCb, sock, addr,otherParam).join();
+	std::thread([=]() {
 		char buffer[4096];
 		int len = 0;
 		while(ifContinue[sock]) {
 			len = 4096;
-			SOCKERR ret = TCPReceive(serConn, buffer, &len);
+			SOCKERR ret = TCPReceive(sock, buffer, &len);
 			if(ret == NOERR) {
-				std::thread(receiveCb, serConn, addr, buffer, len).join();
+				std::thread(receiveCb, sock, addr, buffer, len,otherParam).join();
 			} else if(ret == DISCONNECT) {
-				std::thread(closeCb, addr).join();
+				std::thread(closeCb, addr,otherParam).join();
 				break;
 			}
 		}
 		CloseSock(sock);
-	}, sock, addr).detach();
+	}).detach();
 	return true;
 }
 
