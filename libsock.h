@@ -4,6 +4,9 @@
 
 
 //	更新日志：
+//	V1.5(2017-03-22)
+//		1.加入组播文件传输
+//
 //	V1.4(2017-03-22)
 //		1.增加本地ip传入，应对多网卡情况
 //		2.增加参数输入输出标识
@@ -111,6 +114,8 @@
 
 #include <windows.h>
 #include <set>
+#include <map>
+#include <mutex>
 
 #define MSGBUFFERSIZE 32768 				//消息缓冲区大小
 #define MAXPATHLEN 4096						//文件名最大长度
@@ -355,8 +360,6 @@ private:
 
 
 
-#define FILEHEADERSIZE 1024			//文件头大小
-
 enum class LIBSOCK_API FILETRANSERROR {			//文件传输错误
 	NOERR,										//无错误
 	FILEOPENERROR,								//文件打开错误
@@ -367,6 +370,15 @@ enum class LIBSOCK_API FILETRANSERROR {			//文件传输错误
 	EMPTYLIST,									//空列表
 	ALLSOCKETERROR								//所有套接字全部失败
 };
+
+#pragma pack(1)
+
+struct FilePkgHead{
+	unsigned long long size;
+	char file_name[MAX_PATH];
+};
+
+#pragma pack()
 
 //TCP文件传输类
 class LIBSOCK_API TCPFileTrans {
@@ -413,6 +425,45 @@ public:
 private:
 	std::set<SOCKET> sockList;
 	std::set<SOCKET> errorSockList;
+};
+
+
+#define FLAG_FILE_INFO 0
+#define FLAG_FILE_DATA 1
+#define FLAG_LOSS_PKG 2
+#define FLAG_DISCONNECT 3
+#define FLAG_COMPLETE 4
+
+#define PKG_LENGHT 1400
+#define JUMP_PKG 20
+
+#pragma pack(1)
+
+struct UDPFilePkg{
+	char flag;
+	unsigned long long time_stamp;
+	unsigned long long total_pkg_num;
+	unsigned long long curr_pkg_num;
+	unsigned long long curr_pkg_length;
+	char data[PKG_LENGHT];
+};
+
+#pragma pack()
+
+
+class LIBSOCK_API UDPMulticastFileTrans {
+public:
+	UDPMulticastFileTrans(SOCKET conn_sock);
+	FILETRANSERROR SendFile(__in const char *fileName, __in SOCKADDR *addr, __in const int addrLen);
+	FILETRANSERROR RecvFile(SOCKET sock, const char * dir, char * fullPath, int fullPathLen = 0);
+
+
+	std::mutex mu;
+	unsigned long long int time_stamp;
+	unsigned long long int file_length;
+	std::map<unsigned long long int, UDPFilePkg> buf;
+private:
+	SOCKET sock;
 };
 
 

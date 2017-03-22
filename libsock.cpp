@@ -332,10 +332,10 @@ TCPFileTrans::TCPFileTrans(SOCKET sock_t) :sock(sock_t){
 }
 
 
-void MakeHeader(char *buffer,const char*fileName,const LONGLONG size){
-	memset(buffer, 0, FILEHEADERSIZE);
-	memcpy(buffer, &size, sizeof(LONGLONG));
-	GetFileTitleA(fileName, buffer + sizeof(LONGLONG), FILEHEADERSIZE - sizeof(LONGLONG));
+void MakeHeader(FilePkgHead &buffer,const char*fileName,const LONGLONG size){
+	memset(&buffer, 0, sizeof(FilePkgHead));
+	buffer.size = size;
+	GetFileTitleA(fileName, buffer.file_name, MAX_PATH);
 }
 
 
@@ -350,9 +350,9 @@ FILETRANSERROR TCPFileTrans::SendFile(const char * fileName) {
 		return FILETRANSERROR::FILESIZEERROR;
 	}
 	LONGLONG lFileSize = fileSize.QuadPart;
-	char headerBuffer[FILEHEADERSIZE];
+	FilePkgHead headerBuffer;
 	MakeHeader(headerBuffer, fileName, lFileSize);
-	if(!TCPSend(sock, headerBuffer, FILEHEADERSIZE)) {
+	if(!TCPSend(sock, (const char*)&headerBuffer, sizeof(FilePkgHead))) {
 		return FILETRANSERROR::SOCKETERROR;
 	}
 	char buffer[MSGBUFFERSIZE];
@@ -396,17 +396,17 @@ std::string getFileNameExt(const std::string fullFileName) {
 
 FILETRANSERROR TCPFileTrans::RecvFile(const char * dir,char*fullPath,int fullPathLen) {
 	char buffer[MSGBUFFERSIZE];
-	char fileHeader[FILEHEADERSIZE];
+	FilePkgHead fileHeader;
 	LONGLONG totalRecvSize = 0;
 	int recvSize = 0;
 	SOCKERR sockErr;
-	while(totalRecvSize < FILEHEADERSIZE) {
+	while(totalRecvSize < sizeof(FilePkgHead)) {
 		recvSize = MSGBUFFERSIZE;
 		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::NOERR) {
-			if(totalRecvSize + recvSize>=FILEHEADERSIZE) {
-				memcpy(fileHeader + totalRecvSize, buffer, FILEHEADERSIZE-totalRecvSize);
+			if(totalRecvSize + recvSize>= sizeof(FilePkgHead)) {
+				memcpy((char*)&fileHeader + totalRecvSize, buffer, sizeof(FilePkgHead)-totalRecvSize);
 			} else {
-				memcpy(fileHeader + totalRecvSize, buffer, recvSize);
+				memcpy((char*)&fileHeader + totalRecvSize, buffer, recvSize);
 			}
 			totalRecvSize += recvSize;
 		} else if(sockErr==SOCKERR::DISCONNECT){
@@ -414,20 +414,20 @@ FILETRANSERROR TCPFileTrans::RecvFile(const char * dir,char*fullPath,int fullPat
 		} 
 	}
 	LONGLONG fileSize = 0;
-	memcpy(&fileSize, fileHeader, sizeof(LONGLONG));
+	fileSize = fileHeader.size;
 	char fileName[MAXPATHLEN];
-	char dirF[FILEHEADERSIZE];
+	char dirF[MAX_PATH];
 	if(dir == 0) {
 		dir = ".\\";
 	}
-	strcpy_s(dirF, FILEHEADERSIZE, dir);
+	strcpy_s(dirF, MAX_PATH, dir);
 	if(strlen(dirF) != 0) {
 		if(dirF[strlen(dirF) - 1] != '\\') {
-			strcat_s(dirF,FILEHEADERSIZE, "\\");
+			strcat_s(dirF,MAX_PATH, "\\");
 		}
 	}
 	strcpy_s(fileName, MAXPATHLEN, dirF);
-	strcpy_s(fileName+strlen(dirF), MAXPATHLEN-strlen(dirF), fileHeader + sizeof(LONGLONG));
+	strcpy_s(fileName+strlen(dirF), MAXPATHLEN-strlen(dirF), fileHeader.file_name);
 	HANDLE file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
 	if(file == INVALID_HANDLE_VALUE) {
 		std::string fileNameExt = getFileNameExt(fileName);
@@ -443,15 +443,15 @@ FILETRANSERROR TCPFileTrans::RecvFile(const char * dir,char*fullPath,int fullPat
 	}
 openFileSucc:
 	DWORD writeSize=0;
-	if(!WriteFile(file, buffer, totalRecvSize - FILEHEADERSIZE, &writeSize, NULL)) {
+	if(!WriteFile(file, buffer, totalRecvSize - sizeof(FilePkgHead), &writeSize, NULL)) {
 		CloseHandle(file);
 		return FILETRANSERROR::FILEWRITEERROR;
 	}
-	if(writeSize != totalRecvSize - FILEHEADERSIZE) {
+	if(writeSize != totalRecvSize - sizeof(FilePkgHead)) {
 		CloseHandle(file);
 		return FILETRANSERROR::FILEWRITEERROR;
 	}
-	totalRecvSize -= FILEHEADERSIZE;
+	totalRecvSize -= sizeof(FilePkgHead);
 	while(totalRecvSize < fileSize) {
 		recvSize = MSGBUFFERSIZE;
 		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::DISCONNECT) {
@@ -490,6 +490,7 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 	}
 	LARGE_INTEGER fileSize;
 	if(!GetFileSizeEx(file, &fileSize)) {
+		CloseHandle(file);
 		return FILETRANSERROR::FILESIZEERROR;
 	}
 	LONGLONG lFileSize = fileSize.QuadPart;
@@ -499,10 +500,10 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 	}
 	errorSockList.clear();
 	std::set<SOCKET> sockList = this->sockList;
-	char headerBuffer[FILEHEADERSIZE];
+	FilePkgHead headerBuffer;
 	MakeHeader(headerBuffer, fileName, lFileSize);
 	for(auto p : sockList) {
-		if(!TCPSend(p, headerBuffer, FILEHEADERSIZE)) {
+		if(!TCPSend(p, (const char*)&headerBuffer, sizeof(FilePkgHead))) {
 			errorSockList.insert(p);
 		}
 	}
@@ -583,4 +584,202 @@ bool UDPMulticastLeaveGroup(SOCKET sock, const char* group_ip, const char *local
 		m_mreq.imr_interface.s_addr = htons(INADDR_ANY);
 	}
 	return ::setsockopt(sock, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char*)&m_mreq, sizeof(m_mreq)) != SOCKET_ERROR;
+}
+
+UDPMulticastFileTrans::UDPMulticastFileTrans(SOCKET conn_sock):sock(conn_sock)
+{
+	time_stamp = time(0);
+}
+
+FILETRANSERROR UDPMulticastFileTrans::SendFile(const char * fileName, SOCKADDR * addr, const int addrLen)
+{
+	buf.clear();
+	HANDLE file = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (file == INVALID_HANDLE_VALUE) {
+		return FILETRANSERROR::FILEOPENERROR;
+	}
+	LARGE_INTEGER fileSize;
+	if (!GetFileSizeEx(file, &fileSize)) {
+		CloseHandle(file);
+		return FILETRANSERROR::FILESIZEERROR;
+	}
+	LONGLONG lFileSize = fileSize.QuadPart;
+
+	FilePkgHead headerBuffer;
+	MakeHeader(headerBuffer, fileName, lFileSize);
+	
+	file_length = headerBuffer.size;
+
+	UDPFilePkg pkg;
+	memset(&pkg, 0, sizeof(UDPFilePkg));
+	pkg.total_pkg_num = (file_length + PKG_LENGHT - 1) / PKG_LENGHT;
+	pkg.curr_pkg_num = 0;
+	memcpy_s(&pkg.data, PKG_LENGHT, &headerBuffer, sizeof(FilePkgHead));
+	pkg.flag = FLAG_FILE_INFO;
+	pkg.time_stamp = time_stamp;
+	pkg.curr_pkg_length = sizeof(FilePkgHead);
+	if (!UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen)) {
+		CloseHandle(file);
+		return FILETRANSERROR::SOCKETERROR;
+	}
+
+	std::thread recv_thread(
+		[this]() {
+		UDPFilePkg pkg;
+		int len = sizeof(UDPFilePkg);
+		SOCKADDR sockaddr;
+		while (UDPReceive(sock, (char*)&pkg, &len, &sockaddr, sizeof(SOCKADDR))) {
+			if (pkg.flag == FLAG_LOSS_PKG) {
+				this->mu.lock();
+				if (buf.find(pkg.curr_pkg_num) != buf.end()) {
+					UDPSend(sock, (const char*)&this->buf[pkg.curr_pkg_num], sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
+					this->mu.unlock();
+				}
+				else {
+					this->mu.unlock();
+					pkg.flag = FLAG_DISCONNECT;
+					UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
+				}
+				
+			}
+			else if (pkg.flag == FLAG_COMPLETE) {
+				break;
+			}
+			len = sizeof(UDPFilePkg);
+		}
+	}
+	
+	);
+
+	LONGLONG lastSize = lFileSize;
+	DWORD readSize = 0;
+
+	unsigned long long curr_pkg = 0;
+	
+	while (lastSize) {
+		if (ReadFile(file, pkg.data, PKG_LENGHT, &readSize, NULL)) {
+			lastSize -= readSize;
+			pkg.flag = FLAG_FILE_DATA;
+			pkg.curr_pkg_num = ++curr_pkg;
+			pkg.curr_pkg_length = readSize;
+
+			if (buf.size() == JUMP_PKG) {
+				mu.lock();
+				buf.erase(buf.begin());
+				buf[pkg.curr_pkg_num] = pkg;
+				mu.unlock();
+			}else{
+				mu.lock();
+				buf[pkg.curr_pkg_num] = pkg;
+				mu.unlock();
+			}
+			
+			if (!UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen)) {
+				CloseHandle(file);
+				return FILETRANSERROR::SOCKETERROR;
+			}
+		}
+		else {
+			CloseHandle(file);
+			return FILETRANSERROR::FILEREADERROR;
+		}
+	}
+	CloseHandle(file);
+	Sleep(1000);
+	pkg.flag = FLAG_COMPLETE;
+	UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen);
+	recv_thread.join();
+	return FILETRANSERROR::NOERR;
+}
+
+
+
+FILETRANSERROR UDPMulticastFileTrans::RecvFile(SOCKET sock, const char * dir, char * fullPath, int fullPathLen)
+{
+	bool recv_head = false;
+	UDPFilePkg pkg;
+	int len = sizeof(pkg);
+	SOCKADDR sockaddr;
+	int curr_pkg = 0;
+	HANDLE file = INVALID_HANDLE_VALUE;
+	while (UDPReceive(sock, (char*)&pkg, &len, &sockaddr, sizeof(SOCKADDR))) {
+		if (pkg.flag == FLAG_FILE_INFO) {
+			char fileName[MAXPATHLEN];
+			char dirF[MAX_PATH];
+			if (dir == 0) {
+				dir = ".\\";
+			}
+			strcpy_s(dirF, MAX_PATH, dir);
+			if (strlen(dirF) != 0) {
+				if (dirF[strlen(dirF) - 1] != '\\') {
+					strcat_s(dirF, MAX_PATH, "\\");
+				}
+			}
+			strcpy_s(fileName, MAXPATHLEN, dirF);
+			strcpy_s(fileName + strlen(dirF), MAXPATHLEN - strlen(dirF), ((FilePkgHead*)pkg.data)->file_name);
+			file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+			if (file == INVALID_HANDLE_VALUE) {
+				std::string fileNameExt = getFileNameExt(fileName);
+				std::string fileNamePart = getFileNamePart(fileName);
+				for (int i = 0; i < MAXTRYTIME; ++i) {
+					strcpy_s(fileName, MAXPATHLEN, (fileNamePart + "(" + std::to_string(i) + ")." + fileNameExt).c_str());
+					file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+					if (file != INVALID_HANDLE_VALUE) {
+						goto openFileSucc;
+					}
+				}
+				return FILETRANSERROR::FILEOPENERROR;
+			openFileSucc:
+				++curr_pkg;
+			}
+		}
+		else if (pkg.flag == FLAG_FILE_DATA) {
+			if (pkg.curr_pkg_num == curr_pkg) {
+				DWORD writeSize = 0;
+				if (!WriteFile(file, pkg.data, pkg.curr_pkg_length, &writeSize, NULL)) {
+					CloseHandle(file);
+					return FILETRANSERROR::FILEWRITEERROR;
+				}
+				if (writeSize != pkg.curr_pkg_length) {
+					CloseHandle(file);
+					return FILETRANSERROR::FILEWRITEERROR;
+				}
+				if (buf[curr_pkg].curr_pkg_num == buf[curr_pkg].total_pkg_num) {
+					CloseHandle(file);
+					return FILETRANSERROR::NOERR;
+				}
+				++curr_pkg;
+				while (buf.find(curr_pkg)!=buf.end()) {
+					if (!WriteFile(file, buf[curr_pkg].data, buf[curr_pkg].curr_pkg_length, &writeSize, NULL)) {
+						CloseHandle(file);
+						return FILETRANSERROR::FILEWRITEERROR;
+					}
+					if (writeSize != buf[curr_pkg].curr_pkg_length) {
+						CloseHandle(file);
+						return FILETRANSERROR::FILEWRITEERROR;
+					}
+					if (buf[curr_pkg].curr_pkg_num == buf[curr_pkg].total_pkg_num) {
+						CloseHandle(file);
+						return FILETRANSERROR::NOERR;
+					}
+					buf.erase(curr_pkg);
+					++curr_pkg;
+				}
+			}
+			else if (pkg.curr_pkg_num > curr_pkg) {
+				buf[pkg.curr_pkg_num] = pkg;
+				pkg.flag = FLAG_LOSS_PKG;
+				pkg.curr_pkg_num = curr_pkg;
+				UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
+			}
+		}
+		else if (pkg.flag==FLAG_DISCONNECT) {
+			if (file != INVALID_HANDLE_VALUE) {
+				CloseHandle(file);
+			}
+			return FILETRANSERROR::SOCKETERROR;
+		}
+		len = sizeof(UDPFilePkg);
+	}
+	return FILETRANSERROR::ALLSOCKETERROR;
 }
