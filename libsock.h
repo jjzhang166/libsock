@@ -4,6 +4,9 @@
 
 
 //	更新日志：
+//	V1.4(2017-03-22)
+//		1.增加本地ip传入，应对多网卡情况
+//		2.增加参数输入输出标识
 //
 //	V1.3(2016-04-08):
 //		1.新增一对多文件传输
@@ -129,19 +132,19 @@ enum LIBSOCK_API SOCKERR {				//接收错误类型返回值
 //		ClientSocket：	客户端socket
 //		addr：			对方地址信息
 //		otherParam:		其他参数
-typedef void(*TCPCONNCALLBACK)(SOCKET clientSock, SOCKADDR_IN addr, void *otherParam);
+typedef void(*TCPCONNCALLBACK)(__in SOCKET clientSock, __in SOCKADDR_IN  addr, __inout void *otherParam);
 
 //	TCP/UDP接收到消息时回调函数原型
 //		clientSock:		客户端socket
 //		addr:			对方地址信息
 //		buffer:			接收到的消息
 //		len:			接收到的消息长度
-typedef void(*TCPRECEIVECALLBACK)(SOCKET clientSock, SOCKADDR_IN addr, const char *buffer, int len, void *otherParam);
+typedef void(*TCPRECEIVECALLBACK)(__in SOCKET clientSock, __in SOCKADDR_IN addr, __in const char *buffer, __in int len, __inout void *otherParam);
 
 //	TCP关闭回调函数原型
 //		addr：			对方地址信息
 //		otherParam:		其他参数
-typedef void(*TCPCLOSECALLBACK)(SOCKADDR_IN addr, void *otherParam);
+typedef void(*TCPCLOSECALLBACK)(__in SOCKADDR_IN addr,__inout void *otherParam);
 
 
 //初始化WinSock
@@ -155,13 +158,14 @@ LIBSOCK_API void SockClean();
 //	产生SOCKET
 //		type：	要产生的SOCKET类型，TCP或UDP
 //	返回值：-1表示失败，其他表示成功
-LIBSOCK_API SOCKET MakeSocket(CONNECTTYPE type);
+LIBSOCK_API SOCKET MakeSocket(__in CONNECTTYPE type);
 
 //	绑定套接字到端口
 //		sock：	要绑定的套接字
 //		port：	要绑定的端口
+//		local_ip 本机IP
 //	返回值：成功返回true，失败返回false
-LIBSOCK_API bool BindSocket(SOCKET sock, const unsigned short port);
+LIBSOCK_API bool BindSocket(__in SOCKET sock,__in const unsigned short port,__in const char *local_ip=0);
 
 //	监听TCP套接字
 //		sock：			要监听的套接字
@@ -169,21 +173,21 @@ LIBSOCK_API bool BindSocket(SOCKET sock, const unsigned short port);
 //		maxClientNum：	最大连接数
 //		otherParam：		其他参数
 //	返回值：成功返回true，失败返回false
-LIBSOCK_API bool ListenTcpSocket(SOCKET sock, TCPCONNCALLBACK callBack, const int maxClientNum, void *otherParam = 0);
+LIBSOCK_API bool ListenTcpSocket(__in SOCKET sock,__in TCPCONNCALLBACK callBack,__in const int maxClientNum,__inout void *otherParam = 0);
 
 //	发送TCP消息
 //		sock：		使用的套接字
 //		buffer：		消息缓冲
 //		len：		消息长度
 //	返回值：成功返回true，失败返回false
-LIBSOCK_API bool TCPSend(SOCKET sock, const char*buffer, const int len);
+LIBSOCK_API bool TCPSend(__in SOCKET sock,__in const char*buffer,__in const int len);
 
 //	接收TCP消息
 //		sock：		使用的套接字
 //		buffer：		消息缓冲
 //		len：		消息长度（同时也是缓冲区长度，使用前需要初始化）
 //	返回值：接收错误类型
-LIBSOCK_API SOCKERR TCPReceive(SOCKET sock, char*buffer, int *len);
+LIBSOCK_API SOCKERR TCPReceive(__in SOCKET sock,__out char*buffer,__out int *len);
 
 //	发送UDP信息
 //		sock：		使用的套接字
@@ -192,7 +196,7 @@ LIBSOCK_API SOCKERR TCPReceive(SOCKET sock, char*buffer, int *len);
 //		addr：		对方地址信息
 //		addrLen：	地址信息长度
 //	返回值：成功返回true，失败返回false
-LIBSOCK_API bool UDPSend(SOCKET sock, const char*buffer, const int len, SOCKADDR *addr, const int addrLen);
+LIBSOCK_API bool UDPSend(__in SOCKET sock,__in const char*buffer,__in const int len,__in SOCKADDR *addr,__in const int addrLen);
 
 //	接收UDP消息
 //		sock：		要使用的套接字
@@ -201,25 +205,25 @@ LIBSOCK_API bool UDPSend(SOCKET sock, const char*buffer, const int len, SOCKADDR
 //		addr：		对方地址信息
 //		addrLen：	地址信息长度
 //	返回值：成功返回true，失败返回false
-LIBSOCK_API bool UDPReceive(SOCKET sock, char*buffer, int *len, SOCKADDR *addr, int addrLen);
+LIBSOCK_API bool UDPReceive(__in SOCKET sock, __out char*buffer,__out int *len,__out SOCKADDR *addr,__in int addrLen);
 
 //	TCP连接
 //		sock：		使用的套接字
 //		addr：		对方地址信息
 //		addrLen：	地址信息长度
 //	返回值：连接成功返回true，失败返回false
-LIBSOCK_API bool TCPConnect(SOCKET sock, SOCKADDR *addr, int addrLen);
+LIBSOCK_API bool TCPConnect(__in SOCKET sock, __out SOCKADDR *addr, __in int addrLen);
 
 //	关闭套接字
 //		sock：	要关闭的套接字
 //	成功关闭返回true，失败返回false
-LIBSOCK_API bool CloseSock(SOCKET sock);
+LIBSOCK_API bool CloseSock(__in SOCKET sock);
 
 //	生成地址信息
 //		ipStr：	ip字符串
 //		port：	端口
 // 返回值：返回地址信息
-LIBSOCK_API SOCKADDR_IN MakeAddr(const char* ipStr, const unsigned short port);
+LIBSOCK_API SOCKADDR_IN MakeAddr(__in const char* ipStr, __in  const unsigned short port);
 
 //默认的连接回调函数（什么都不做）
 LIBSOCK_API void DEFAULTTCPCONNCALLBACK(SOCKET clientSock, SOCKADDR_IN addr, void *otherParam = 0);
@@ -237,9 +241,9 @@ LIBSOCK_API void DEFAULTTCPCLOSECALLBACK(SOCKADDR_IN addr, void *otherParam = 0)
 class LIBSOCK_API TCPServer {
 public:
 	//	使用回调函数初始化
-	TCPServer(TCPCONNCALLBACK tcpConnCallBack = DEFAULTTCPCONNCALLBACK,
-		TCPRECEIVECALLBACK tcpReceiveCallBack = DEFAULTTCPRECEIVECALLBACK,
-		TCPCLOSECALLBACK tcpCloseCallBack = DEFAULTTCPCLOSECALLBACK);
+	TCPServer(__in TCPCONNCALLBACK tcpConnCallBack = DEFAULTTCPCONNCALLBACK,
+		__in TCPRECEIVECALLBACK tcpReceiveCallBack = DEFAULTTCPRECEIVECALLBACK,
+		__in TCPCLOSECALLBACK tcpCloseCallBack = DEFAULTTCPCLOSECALLBACK);
 
 	//	初始化套接字
 	//	返回值：初始化成功返回true，失败返回false
@@ -250,7 +254,7 @@ public:
 	//		maxClientNum：	最大连接数量
 	//		otherParam:		其他参数
 	//	返回值：成功返回true，失败返回false
-	bool listen(const unsigned short port, int const maxClientNum, void *otherParam = 0);
+	bool listen(__in const unsigned short port, __in  int const maxClientNum, __in  void *otherParam = 0, __in const char *local_ip = 0);
 
 	//	关闭套接字
 	void close();
@@ -269,11 +273,11 @@ private:
 //	TCP客户端类
 class LIBSOCK_API TCPClient {
 public:
-	// 见TCP服务器类
+	// 见TCP客户端类
 	TCPClient(
-		TCPCONNCALLBACK tcpConnCallBack = DEFAULTTCPCONNCALLBACK,
-		TCPRECEIVECALLBACK tcpReceiveCallBack = DEFAULTTCPRECEIVECALLBACK,
-		TCPCLOSECALLBACK tcpCloseCallBack = DEFAULTTCPCLOSECALLBACK);
+		__in TCPCONNCALLBACK tcpConnCallBack = DEFAULTTCPCONNCALLBACK,
+		__in TCPRECEIVECALLBACK tcpReceiveCallBack = DEFAULTTCPRECEIVECALLBACK,
+		__in TCPCLOSECALLBACK tcpCloseCallBack = DEFAULTTCPCLOSECALLBACK);
 
 	// 见TCP服务器类
 	static bool init();
@@ -284,7 +288,7 @@ public:
 	//		selfPort：	本地端口
 	//		otherParam:	其他参数
 	//	返回值：连接成功返回true，失败返回false
-	bool connect(const char*ip, const unsigned short port, const unsigned short selfPort, void *otherParam = 0);
+	bool connect(__in const char*ip, __in  const unsigned short port, __in  const unsigned short selfPort, __inout void *otherParam = 0,const char *local_ip=0);
 
 	// 见TCP服务器类
 	void close();
@@ -303,7 +307,7 @@ class LIBSOCK_API UDPSocket {
 public:
 
 	// 见TCP服务器类
-	UDPSocket(UDPRECEIVECALLBACK UdpReceiveCallBack = DEFAULTUDPRECEIVECALLBACK);
+	UDPSocket(__in UDPRECEIVECALLBACK UdpReceiveCallBack = DEFAULTUDPRECEIVECALLBACK);
 
 	// 见TCP服务器类
 	static bool init();
@@ -311,8 +315,9 @@ public:
 	//	接收消息
 	//		port：			本地端口
 	//		otherParam:		其他参数
+	//		local_ip		本机IP
 	//	返回值：成功返回true，失败返回false
-	bool recv(const unsigned short port, void*otherParam = 0);
+	bool recv(__in const unsigned short port, __inout void*otherParam = 0,const char *local_ip=0);
 
 	// 见TCP服务器类
 	void close();
@@ -346,17 +351,17 @@ public:
 
 	//	构造一个文件传输类
 	//		sock：		使用的套接字
-	TCPFileTrans(SOCKET sock);
+	TCPFileTrans(__in SOCKET sock);
 
 	//	发送文件
 	//		fileName：	要发送的文件路径
 	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
-	FILETRANSERROR SendFile(const char *fileName);
+	FILETRANSERROR SendFile(__in const char *fileName);
 
 	//	接收文件
 	//		dir：		接收文件存放路径
 	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
-	FILETRANSERROR RecvFile(const char*dir,char *fullPath=0,int fullPathLen=0);
+	FILETRANSERROR RecvFile(__in const char*dir, __out char *fullPath=0, __in int fullPathLen=0);
 private:
 	SOCKET sock;
 };
@@ -369,15 +374,15 @@ public:
 	//	发送文件
 	//		fileName：	要发送的文件路径
 	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
-	FILETRANSERROR SendFile(const char *fileName);
+	FILETRANSERROR SendFile(__in const char *fileName);
 
 	//	添加socket
 	//		sock：	要添加的socket
-	void AddSock(SOCKET sock);
+	void AddSock(__in SOCKET sock);
 
 	//	删除Socket
 	//		sock：	要删除的socket
-	void RemoveSock(SOCKET sock);
+	void RemoveSock(__in SOCKET sock);
 
 	//	获取错误Socket列表
 	//	返回值：返回出错的socket集合

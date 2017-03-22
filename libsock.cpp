@@ -57,10 +57,16 @@ LIBSOCK_API SOCKET MakeSocket(CONNECTTYPE type) {
 
 LIBSOCK_API bool BindSocket(
 	SOCKET sock,
-	const unsigned short port
+	const unsigned short port,
+	const char *local_ip
 	) {
 	SOCKADDR_IN addr;
-	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	if (local_ip == 0) {
+		addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	}
+	else {
+		addr.sin_addr.S_un.S_addr = htonl(inet_addr(local_ip));
+	}
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port);
 	if(0 == ::bind(sock, (sockaddr*)&addr, sizeof(addr))) {
@@ -175,11 +181,11 @@ bool TCPServer::init() {
 }
 
 
-bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void *otherParam) {
+bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void *otherParam,const char *local_ip) {
 	sock = MakeSocket(CONNECTTYPE::TCP);
 	if(-1 == sock)
 		return false;
-	if(!BindSocket(sock, port)) {
+	if(!BindSocket(sock, port, local_ip)) {
 		return false;
 	}
 	if(::listen(sock, maxClientNum))
@@ -228,12 +234,12 @@ bool UDPSocket::init() {
 
 
 
-bool UDPSocket::recv(const unsigned short port, void *otherParam) {
+bool UDPSocket::recv(const unsigned short port, void *otherParam,const char *local_ip) {
 	sock = MakeSocket(CONNECTTYPE::UDP);
 	if(-1 == sock) {
 		return false;
 	}
-	if(!BindSocket(sock, port)) {
+	if (!BindSocket(sock, port, local_ip)) {
 		return false;
 	}
 	ifContinue[sock] = true;
@@ -268,11 +274,11 @@ bool TCPClient::init() {
 	return SockInit();
 }
 
-bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort,void *otherParam) {
+bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort,void *otherParam,const char *local_ip) {
 	sock = MakeSocket(CONNECTTYPE::TCP);
 	if(-1 == sock)
 		return false;
-	if(!BindSocket(sock, selfPort)) {
+	if(!BindSocket(sock, selfPort,ip)) {
 		return false;
 	}
 	SOCKADDR_IN addr = MakeAddr(ip, port);
@@ -319,7 +325,7 @@ TCPFileTrans::TCPFileTrans(SOCKET sock_t) :sock(sock_t){
 }
 
 
-void MakeHrader(char *buffer,const char*fileName,const LONGLONG size){
+void MakeHeader(char *buffer,const char*fileName,const LONGLONG size){
 	memset(buffer, 0, FILEHEADERSIZE);
 	memcpy(buffer, &size, sizeof(LONGLONG));
 	GetFileTitleA(fileName, buffer + sizeof(LONGLONG), FILEHEADERSIZE - sizeof(LONGLONG));
@@ -338,7 +344,7 @@ FILETRANSERROR TCPFileTrans::SendFile(const char * fileName) {
 	}
 	LONGLONG lFileSize = fileSize.QuadPart;
 	char headerBuffer[FILEHEADERSIZE];
-	MakeHrader(headerBuffer, fileName, lFileSize);
+	MakeHeader(headerBuffer, fileName, lFileSize);
 	if(!TCPSend(sock, headerBuffer, FILEHEADERSIZE)) {
 		return FILETRANSERROR::SOCKETERROR;
 	}
@@ -487,7 +493,7 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 	errorSockList.clear();
 	std::set<SOCKET> sockList = this->sockList;
 	char headerBuffer[FILEHEADERSIZE];
-	MakeHrader(headerBuffer, fileName, lFileSize);
+	MakeHeader(headerBuffer, fileName, lFileSize);
 	for(auto p : sockList) {
 		if(!TCPSend(p, headerBuffer, FILEHEADERSIZE)) {
 			errorSockList.insert(p);
