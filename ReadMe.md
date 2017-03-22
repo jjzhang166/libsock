@@ -4,7 +4,7 @@
 
 
 #	更新日志：
-##	V1.3(2017-03-22)
+##	V1.4(2017-03-22)
 ###		1.增加本地ip传入，应对多网卡情况
 ###		2.增加参数输入输出标识
 
@@ -47,6 +47,9 @@
 ###			发送接收等操作
 ###			使用结束调用CloseSock()
 ###			SockClean()清理
+###			UDPMulticastJoinGroup() 加入UDP组播
+###			UDPMulticastLeaveGroup() 离开UDP组播
+
 
 ##		TCP服务器面向对象：
 ###			实现TCP连接回调函数、TCP接收回调函数、TCP关闭回调函数

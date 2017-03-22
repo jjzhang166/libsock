@@ -242,22 +242,29 @@ bool UDPSocket::recv(const unsigned short port, void *otherParam,const char *loc
 	if (!BindSocket(sock, port, local_ip)) {
 		return false;
 	}
+	return recv(sock, otherParam);
+}
+
+
+bool UDPSocket::recv(__in SOCKET recv_sock, __inout void*otherParam /* = 0 */) {
+	sock = recv_sock;
 	ifContinue[sock] = true;
 	std::thread([=]() {
 		SOCKADDR_IN clientAddr;
 		char buffer[MSGBUFFERSIZE];
 		int len = 0;
-		while(ifContinue[sock]) {
+		while (ifContinue[sock]) {
 			memset(buffer, 0, MSGBUFFERSIZE);
 			len = MSGBUFFERSIZE;
-			if(UDPReceive(sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
-				std::thread(receiveCb, sock, clientAddr, buffer, len,otherParam).join();
+			if (UDPReceive(sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
+				std::thread(receiveCb, sock, clientAddr, buffer, len, otherParam).join();
 			}
 		}
 		CloseSock(sock);
 	}).detach();
 	return true;
 }
+
 
 void UDPSocket::close() {
 	ifContinue[sock] = false;
@@ -544,4 +551,36 @@ void TCPFileTransEx::RemoveSock(SOCKET sock) {
 
 std::set<SOCKET> TCPFileTransEx::GetErrSockList() {
 	return errorSockList;
+}
+
+
+
+bool UDPMulticastJoinGroup(SOCKET sock, const char* group_ip, const char *local_ip){
+	BOOL bMultipleApps = TRUE;
+	if (::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&bMultipleApps, sizeof(BOOL)) == SOCKET_ERROR) {
+		return false;
+	}
+
+	ip_mreq m_mreq;
+	m_mreq.imr_multiaddr.s_addr = inet_addr(group_ip);
+	if (local_ip != 0) {
+		m_mreq.imr_interface.s_addr = inet_addr(local_ip);
+	}
+	else {
+		m_mreq.imr_interface.s_addr = htons(INADDR_ANY);
+	}
+	return ::setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char*)&m_mreq, sizeof(m_mreq)) != SOCKET_ERROR;
+}
+
+
+bool UDPMulticastLeaveGroup(SOCKET sock, const char* group_ip, const char *local_ip){
+	ip_mreq m_mreq;
+	m_mreq.imr_multiaddr.s_addr = inet_addr(group_ip);
+	if (local_ip != 0) {
+		m_mreq.imr_interface.s_addr = inet_addr(local_ip);
+	}
+	else {
+		m_mreq.imr_interface.s_addr = htons(INADDR_ANY);
+	}
+	return ::setsockopt(sock, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char*)&m_mreq, sizeof(m_mreq)) != SOCKET_ERROR;
 }

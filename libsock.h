@@ -207,6 +207,23 @@ LIBSOCK_API bool UDPSend(__in SOCKET sock,__in const char*buffer,__in const int 
 //	返回值：成功返回true，失败返回false
 LIBSOCK_API bool UDPReceive(__in SOCKET sock, __out char*buffer,__out int *len,__out SOCKADDR *addr,__in int addrLen);
 
+
+
+//	加入组播
+//		sock：		套接字
+//		group_ip:	组播地址
+//		local_ip:	本地ip
+//	返回值：加入成功返回true，失败返回false
+LIBSOCK_API bool UDPMulticastJoinGroup(__in SOCKET sock,__in const char* group_ip,__in const char *local_ip=0);
+
+//	离开组播
+//		sock：		套接字
+//		group_ip:	组播地址
+//		local_ip:	本地ip
+//	返回值：离开成功返回true，失败返回false
+LIBSOCK_API bool UDPMulticastLeaveGroup(SOCKET sock, const char* group_ip, const char *local_ip=0);
+
+
 //	TCP连接
 //		sock：		使用的套接字
 //		addr：		对方地址信息
@@ -317,7 +334,13 @@ public:
 	//		otherParam:		其他参数
 	//		local_ip		本机IP
 	//	返回值：成功返回true，失败返回false
-	bool recv(__in const unsigned short port, __inout void*otherParam = 0,const char *local_ip=0);
+	bool recv(__in const unsigned short port, __inout void*otherParam = 0, const char *local_ip = 0);
+
+	//	接收消息
+	//		recv_sock		用于接收的套接字
+	//		otherParam:		其他参数
+	//	返回值：成功返回true，失败返回false
+	bool recv(__in SOCKET recv_sock, __inout void*otherParam = 0);
 
 	// 见TCP服务器类
 	void close();
