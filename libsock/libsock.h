@@ -285,11 +285,11 @@ public:
 	//	返回值：实例的套接字
 	SOCKET getSock();
 private:
-	TCPCONNCALLBACK connCb;
-	TCPRECEIVECALLBACK receiveCb;
-	TCPCLOSECALLBACK closeCb;
+	TCPCONNCALLBACK __m_conn;
+	TCPRECEIVECALLBACK __m_receive;
+	TCPCLOSECALLBACK __m_close;
 
-	SOCKET sock;
+	SOCKET __m_sock;
 };
 
 //	TCP客户端类
@@ -318,10 +318,10 @@ public:
 	// 见TCP服务器类
 	SOCKET getSock();
 private:
-	TCPCONNCALLBACK connCb;
-	TCPRECEIVECALLBACK receiveCb;
-	TCPCLOSECALLBACK closeCb;
-	SOCKET sock;
+	TCPCONNCALLBACK __cb_conn;
+	TCPRECEIVECALLBACK __cb_receive;
+	TCPCLOSECALLBACK __cb_close;
+	SOCKET __m_sock;
 };
 
 //	UDP套接字类
@@ -353,8 +353,8 @@ public:
 	// 见TCP服务器类
 	SOCKET getSock();
 private:
-	TCPRECEIVECALLBACK receiveCb;
-	SOCKET sock;
+	TCPRECEIVECALLBACK __cb_receive;
+	SOCKET __m_sock;
 };
 
 
@@ -398,7 +398,7 @@ public:
 	//	返回值：返回FILETRANSERROR::NOERR表示成功，其他为失败
 	FILETRANSERROR RecvFile(__in const char*dir, __out char *fullPath=0, __in int fullPathLen=0);
 private:
-	SOCKET sock;
+	SOCKET __m_sock;
 };
 
 
@@ -423,47 +423,8 @@ public:
 	//	返回值：返回出错的socket集合
 	std::set<SOCKET> GetErrSockList();
 private:
-	std::set<SOCKET> sockList;
-	std::set<SOCKET> errorSockList;
-};
-
-
-#define FLAG_FILE_INFO 0
-#define FLAG_FILE_DATA 1
-#define FLAG_LOSS_PKG 2
-#define FLAG_DISCONNECT 3
-#define FLAG_COMPLETE 4
-
-#define PKG_LENGHT 1400
-#define JUMP_PKG 20
-
-#pragma pack(1)
-
-struct UDPFilePkg{
-	char flag;
-	unsigned long long time_stamp;
-	unsigned long long total_pkg_num;
-	unsigned long long curr_pkg_num;
-	unsigned long long curr_pkg_length;
-	char data[PKG_LENGHT];
-};
-
-#pragma pack()
-
-
-class LIBSOCK_API UDPMulticastFileTrans {
-public:
-	UDPMulticastFileTrans(SOCKET conn_sock);
-	FILETRANSERROR SendFile(__in const char *fileName, __in SOCKADDR *addr, __in const int addrLen);
-	FILETRANSERROR RecvFile(SOCKET sock, const char * dir, char * fullPath, int fullPathLen = 0);
-
-
-	std::mutex mu;
-	unsigned long long int time_stamp;
-	unsigned long long int file_length;
-	std::map<unsigned long long int, UDPFilePkg> buf;
-private:
-	SOCKET sock;
+	std::set<SOCKET> __m_sockList;
+	std::set<SOCKET> __m_errorSockList;
 };
 
 

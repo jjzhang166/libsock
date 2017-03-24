@@ -172,7 +172,7 @@ TCPServer::TCPServer(
 	TCPCONNCALLBACK tcpConnCallBack,
 	TCPRECEIVECALLBACK tcpReceiveCallBack,
 	TCPCLOSECALLBACK tcpCloseCallBack
-	) :connCb(tcpConnCallBack), receiveCb(tcpReceiveCallBack), closeCb(tcpCloseCallBack), sock(0) {
+	) :__m_conn(tcpConnCallBack), __m_receive(tcpReceiveCallBack), __m_close(tcpCloseCallBack), __m_sock(0) {
 
 }
 
@@ -182,21 +182,21 @@ bool TCPServer::init() {
 
 
 bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void *otherParam,const char *local_ip) {
-	sock = MakeSocket(CONNECTTYPE::TCP);
-	if(-1 == sock)
+	__m_sock = MakeSocket(CONNECTTYPE::TCP);
+	if(-1 == __m_sock)
 		return false;
-	if(!BindSocket(sock, port, local_ip)) {
+	if(!BindSocket(__m_sock, port, local_ip)) {
 		return false;
 	}
-	if(::listen(sock, maxClientNum))
+	if(::listen(__m_sock, maxClientNum))
 		return FALSE;
-	ifContinue[sock] = true;
+	ifContinue[__m_sock] = true;
 	std::thread([=]() {
-		while(ifContinue[sock]) {
+		while(ifContinue[__m_sock]) {
 			SOCKADDR_IN clientAddr;
 			int len = sizeof(clientAddr);
-			SOCKET serConn = accept(sock, (SOCKADDR*)&clientAddr, &len);
-			std::thread(connCb, serConn, clientAddr,otherParam).join();
+			SOCKET serConn = accept(__m_sock, (SOCKADDR*)&clientAddr, &len);
+			std::thread(__m_conn, serConn, clientAddr,otherParam).join();
 			std::thread([=]() {
 				char buffer[MSGBUFFERSIZE];
 				int len = 0;
@@ -204,27 +204,27 @@ bool TCPServer::listen(const unsigned short port, int const  maxClientNum, void 
 					len = MSGBUFFERSIZE;
 					SOCKERR ret = TCPReceive(serConn, buffer, &len);
 					if(ret == NOERR) {
-						std::thread(receiveCb, serConn, clientAddr, buffer, len,otherParam).join();
+						std::thread(__m_receive, serConn, clientAddr, buffer, len,otherParam).join();
 					} else if(ret == DISCONNECT) {
-						std::thread(closeCb, clientAddr,otherParam).join();
+						std::thread(__m_close, clientAddr,otherParam).join();
 						CloseSock(serConn);
 						break;
 					}
 				}
 			}).detach();
 		}
-		CloseSock(sock);
+		CloseSock(__m_sock);
 	}).detach();
 	return true;
 }
 
 void TCPServer::close() {
-	ifContinue[sock] = false;
+	ifContinue[__m_sock] = false;
 }
 
 
 
-UDPSocket::UDPSocket(UDPRECEIVECALLBACK UdpReceiveCallBack) : receiveCb(UdpReceiveCallBack), sock(0) {
+UDPSocket::UDPSocket(UDPRECEIVECALLBACK UdpReceiveCallBack) : __cb_receive(UdpReceiveCallBack), __m_sock(0) {
 
 }
 
@@ -235,45 +235,45 @@ bool UDPSocket::init() {
 
 
 bool UDPSocket::recv(const unsigned short port, void *otherParam,const char *local_ip) {
-	sock = MakeSocket(CONNECTTYPE::UDP);
-	if(-1 == sock) {
+	__m_sock = MakeSocket(CONNECTTYPE::UDP);
+	if(-1 == __m_sock) {
 		return false;
 	}
-	if (!BindSocket(sock, port, local_ip)) {
+	if (!BindSocket(__m_sock, port, local_ip)) {
 		return false;
 	}
-	return recv(sock, otherParam);
+	return recv(__m_sock, otherParam);
 }
 
 
 bool UDPSocket::recv(__in SOCKET recv_sock, __inout void*otherParam /* = 0 */) {
-	sock = recv_sock;
-	ifContinue[sock] = true;
+	__m_sock = recv_sock;
+	ifContinue[__m_sock] = true;
 	std::thread([=]() {
 		SOCKADDR_IN clientAddr;
 		char buffer[MSGBUFFERSIZE];
 		int len = 0;
-		while (ifContinue[sock]) {
+		while (ifContinue[__m_sock]) {
 			memset(buffer, 0, MSGBUFFERSIZE);
 			len = MSGBUFFERSIZE;
-			if (UDPReceive(sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
-				std::thread(receiveCb, sock, clientAddr, buffer, len, otherParam).join();
+			if (UDPReceive(__m_sock, buffer, &len, (SOCKADDR*)&clientAddr, sizeof(clientAddr))) {
+				std::thread(__cb_receive, __m_sock, clientAddr, buffer, len, otherParam).join();
 			}
 		}
-		CloseSock(sock);
+		CloseSock(__m_sock);
 	}).detach();
 	return true;
 }
 
 
 void UDPSocket::close() {
-	ifContinue[sock] = false;
+	ifContinue[__m_sock] = false;
 }
 
 TCPClient::TCPClient(TCPCONNCALLBACK tcpConnCallBack,
 	TCPRECEIVECALLBACK tcpReceiveCallBack,
 	TCPCLOSECALLBACK tcpCloseCallBack
-	) :connCb(tcpConnCallBack), receiveCb(tcpReceiveCallBack), closeCb(tcpCloseCallBack), sock(0) {
+	) :__cb_conn(tcpConnCallBack), __cb_receive(tcpReceiveCallBack), __cb_close(tcpCloseCallBack), __m_sock(0) {
 
 }
 
@@ -282,53 +282,53 @@ bool TCPClient::init() {
 }
 
 bool TCPClient::connect(const char*ip, const unsigned short port, const unsigned short selfPort,void *otherParam,const char *local_ip) {
-	sock = MakeSocket(CONNECTTYPE::TCP);
-	if(-1 == sock)
+	__m_sock = MakeSocket(CONNECTTYPE::TCP);
+	if(-1 == __m_sock)
 		return false;
-	if(!BindSocket(sock, selfPort,ip)) {
+	if(!BindSocket(__m_sock, selfPort,ip)) {
 		return false;
 	}
 	SOCKADDR_IN addr = MakeAddr(ip, port);
-	if(!TCPConnect(sock, (SOCKADDR*)&addr, sizeof(SOCKADDR_IN)))
+	if(!TCPConnect(__m_sock, (SOCKADDR*)&addr, sizeof(SOCKADDR_IN)))
 		return FALSE;
-	ifContinue[sock] = true;
-	std::thread(connCb, sock, addr,otherParam).join();
+	ifContinue[__m_sock] = true;
+	std::thread(__cb_conn, __m_sock, addr,otherParam).join();
 	std::thread([=]() {
 		char buffer[MSGBUFFERSIZE];
 		int len = 0;
-		while(ifContinue[sock]) {
+		while(ifContinue[__m_sock]) {
 			len = MSGBUFFERSIZE;
-			SOCKERR ret = TCPReceive(sock, buffer, &len);
+			SOCKERR ret = TCPReceive(__m_sock, buffer, &len);
 			if(ret == NOERR) {
-				std::thread(receiveCb, sock, addr, buffer, len,otherParam).join();
+				std::thread(__cb_receive, __m_sock, addr, buffer, len,otherParam).join();
 			} else if(ret == DISCONNECT) {
-				std::thread(closeCb, addr,otherParam).join();
+				std::thread(__cb_close, addr,otherParam).join();
 				break;
 			}
 		}
-		CloseSock(sock);
+		CloseSock(__m_sock);
 	}).detach();
 	return true;
 }
 
 void TCPClient::close() {
-	ifContinue[sock] = false;
+	ifContinue[__m_sock] = false;
 }
 
 
 SOCKET TCPServer::getSock() {
-	return sock;
+	return __m_sock;
 }
 
 SOCKET TCPClient::getSock() {
-	return sock;
+	return __m_sock;
 }
 
 SOCKET UDPSocket::getSock() {
-	return sock;
+	return __m_sock;
 }
 
-TCPFileTrans::TCPFileTrans(SOCKET sock_t) :sock(sock_t){
+TCPFileTrans::TCPFileTrans(SOCKET sock_t) :__m_sock(sock_t){
 }
 
 
@@ -352,7 +352,7 @@ FILETRANSERROR TCPFileTrans::SendFile(const char * fileName) {
 	LONGLONG lFileSize = fileSize.QuadPart;
 	FilePkgHead headerBuffer;
 	MakeHeader(headerBuffer, fileName, lFileSize);
-	if(!TCPSend(sock, (const char*)&headerBuffer, sizeof(FilePkgHead))) {
+	if(!TCPSend(__m_sock, (const char*)&headerBuffer, sizeof(FilePkgHead))) {
 		return FILETRANSERROR::SOCKETERROR;
 	}
 	char buffer[MSGBUFFERSIZE];
@@ -361,7 +361,7 @@ FILETRANSERROR TCPFileTrans::SendFile(const char * fileName) {
 	while(lastSize) {
 		if(ReadFile(file, buffer, MSGBUFFERSIZE, &readSize, NULL)) {
 			lastSize -= readSize;
-			if(!TCPSend(sock,buffer,readSize)) {
+			if(!TCPSend(__m_sock,buffer,readSize)) {
 				CloseHandle(file);
 				return FILETRANSERROR::SOCKETERROR;
 			}
@@ -402,7 +402,7 @@ FILETRANSERROR TCPFileTrans::RecvFile(const char * dir,char*fullPath,int fullPat
 	SOCKERR sockErr;
 	while(totalRecvSize < sizeof(FilePkgHead)) {
 		recvSize = MSGBUFFERSIZE;
-		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::NOERR) {
+		if((sockErr=TCPReceive(__m_sock, buffer, &recvSize))==SOCKERR::NOERR) {
 			if(totalRecvSize + recvSize>= sizeof(FilePkgHead)) {
 				memcpy((char*)&fileHeader + totalRecvSize, buffer, sizeof(FilePkgHead)-totalRecvSize);
 			} else {
@@ -454,7 +454,7 @@ openFileSucc:
 	totalRecvSize -= sizeof(FilePkgHead);
 	while(totalRecvSize < fileSize) {
 		recvSize = MSGBUFFERSIZE;
-		if((sockErr=TCPReceive(sock, buffer, &recvSize))==SOCKERR::DISCONNECT) {
+		if((sockErr=TCPReceive(__m_sock, buffer, &recvSize))==SOCKERR::DISCONNECT) {
 			CloseHandle(file);
 			return FILETRANSERROR::SOCKETERROR;
 		} else if(sockErr==SOCKERR::NOMESSAGE){
@@ -479,7 +479,7 @@ openFileSucc:
 
 
 
-TCPFileTransEx::TCPFileTransEx( std::set<SOCKET> sockList_t):sockList(sockList_t) {
+TCPFileTransEx::TCPFileTransEx( std::set<SOCKET> sockList_t):__m_sockList(sockList_t) {
 
 }
 
@@ -494,20 +494,20 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 		return FILETRANSERROR::FILESIZEERROR;
 	}
 	LONGLONG lFileSize = fileSize.QuadPart;
-	if(sockList.empty()) {
+	if(__m_sockList.empty()) {
 		CloseHandle(file);
 		return FILETRANSERROR::EMPTYLIST;
 	}
-	errorSockList.clear();
-	std::set<SOCKET> sockList = this->sockList;
+	__m_errorSockList.clear();
+	std::set<SOCKET> sockList = this->__m_sockList;
 	FilePkgHead headerBuffer;
 	MakeHeader(headerBuffer, fileName, lFileSize);
 	for(auto p : sockList) {
 		if(!TCPSend(p, (const char*)&headerBuffer, sizeof(FilePkgHead))) {
-			errorSockList.insert(p);
+			__m_errorSockList.insert(p);
 		}
 	}
-	for(auto p : errorSockList) {
+	for(auto p : __m_errorSockList) {
 		sockList.erase(p);
 	}
 	if(sockList.empty()) {
@@ -522,10 +522,10 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 			lastSize -= readSize;
 			for(auto p : sockList) {
 				if(!TCPSend(p, buffer, readSize)) {
-					errorSockList.insert(p);
+					__m_errorSockList.insert(p);
 				}
 			}
-			for(auto p : errorSockList) {
+			for(auto p : __m_errorSockList) {
 				sockList.erase(p);
 			}
 			if(sockList.empty()) {
@@ -543,15 +543,15 @@ FILETRANSERROR TCPFileTransEx::SendFile(const char * fileName) {
 
 
 void TCPFileTransEx::AddSock(SOCKET sock) {
-	sockList.insert(sock);
+	__m_sockList.insert(sock);
 }
 
 void TCPFileTransEx::RemoveSock(SOCKET sock) {
-	sockList.erase(sock);
+	__m_sockList.erase(sock);
 }
 
 std::set<SOCKET> TCPFileTransEx::GetErrSockList() {
-	return errorSockList;
+	return __m_errorSockList;
 }
 
 
@@ -586,200 +586,3 @@ bool UDPMulticastLeaveGroup(SOCKET sock, const char* group_ip, const char *local
 	return ::setsockopt(sock, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char*)&m_mreq, sizeof(m_mreq)) != SOCKET_ERROR;
 }
 
-UDPMulticastFileTrans::UDPMulticastFileTrans(SOCKET conn_sock):sock(conn_sock)
-{
-	time_stamp = time(0);
-}
-
-FILETRANSERROR UDPMulticastFileTrans::SendFile(const char * fileName, SOCKADDR * addr, const int addrLen)
-{
-	buf.clear();
-	HANDLE file = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (file == INVALID_HANDLE_VALUE) {
-		return FILETRANSERROR::FILEOPENERROR;
-	}
-	LARGE_INTEGER fileSize;
-	if (!GetFileSizeEx(file, &fileSize)) {
-		CloseHandle(file);
-		return FILETRANSERROR::FILESIZEERROR;
-	}
-	LONGLONG lFileSize = fileSize.QuadPart;
-
-	FilePkgHead headerBuffer;
-	MakeHeader(headerBuffer, fileName, lFileSize);
-	
-	file_length = headerBuffer.size;
-
-	UDPFilePkg pkg;
-	memset(&pkg, 0, sizeof(UDPFilePkg));
-	pkg.total_pkg_num = (file_length + PKG_LENGHT - 1) / PKG_LENGHT;
-	pkg.curr_pkg_num = 0;
-	memcpy_s(&pkg.data, PKG_LENGHT, &headerBuffer, sizeof(FilePkgHead));
-	pkg.flag = FLAG_FILE_INFO;
-	pkg.time_stamp = time_stamp;
-	pkg.curr_pkg_length = sizeof(FilePkgHead);
-	if (!UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen)) {
-		CloseHandle(file);
-		return FILETRANSERROR::SOCKETERROR;
-	}
-
-	std::thread recv_thread(
-		[this]() {
-		UDPFilePkg pkg;
-		int len = sizeof(UDPFilePkg);
-		SOCKADDR sockaddr;
-		while (UDPReceive(sock, (char*)&pkg, &len, &sockaddr, sizeof(SOCKADDR))) {
-			if (pkg.flag == FLAG_LOSS_PKG) {
-				this->mu.lock();
-				if (buf.find(pkg.curr_pkg_num) != buf.end()) {
-					UDPSend(sock, (const char*)&this->buf[pkg.curr_pkg_num], sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
-					this->mu.unlock();
-				}
-				else {
-					this->mu.unlock();
-					pkg.flag = FLAG_DISCONNECT;
-					UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
-				}
-				
-			}
-			else if (pkg.flag == FLAG_COMPLETE) {
-				break;
-			}
-			len = sizeof(UDPFilePkg);
-		}
-	}
-	
-	);
-
-	LONGLONG lastSize = lFileSize;
-	DWORD readSize = 0;
-
-	unsigned long long curr_pkg = 0;
-	
-	while (lastSize) {
-		if (ReadFile(file, pkg.data, PKG_LENGHT, &readSize, NULL)) {
-			lastSize -= readSize;
-			pkg.flag = FLAG_FILE_DATA;
-			pkg.curr_pkg_num = ++curr_pkg;
-			pkg.curr_pkg_length = readSize;
-
-			if (buf.size() == JUMP_PKG) {
-				mu.lock();
-				buf.erase(buf.begin());
-				buf[pkg.curr_pkg_num] = pkg;
-				mu.unlock();
-			}else{
-				mu.lock();
-				buf[pkg.curr_pkg_num] = pkg;
-				mu.unlock();
-			}
-			
-			if (!UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen)) {
-				CloseHandle(file);
-				return FILETRANSERROR::SOCKETERROR;
-			}
-		}
-		else {
-			CloseHandle(file);
-			return FILETRANSERROR::FILEREADERROR;
-		}
-	}
-	CloseHandle(file);
-	Sleep(1000);
-	pkg.flag = FLAG_COMPLETE;
-	UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), addr, addrLen);
-	recv_thread.join();
-	return FILETRANSERROR::NOERR;
-}
-
-
-
-FILETRANSERROR UDPMulticastFileTrans::RecvFile(SOCKET sock, const char * dir, char * fullPath, int fullPathLen)
-{
-	bool recv_head = false;
-	UDPFilePkg pkg;
-	int len = sizeof(pkg);
-	SOCKADDR sockaddr;
-	int curr_pkg = 0;
-	HANDLE file = INVALID_HANDLE_VALUE;
-	while (UDPReceive(sock, (char*)&pkg, &len, &sockaddr, sizeof(SOCKADDR))) {
-		if (pkg.flag == FLAG_FILE_INFO) {
-			char fileName[MAXPATHLEN];
-			char dirF[MAX_PATH];
-			if (dir == 0) {
-				dir = ".\\";
-			}
-			strcpy_s(dirF, MAX_PATH, dir);
-			if (strlen(dirF) != 0) {
-				if (dirF[strlen(dirF) - 1] != '\\') {
-					strcat_s(dirF, MAX_PATH, "\\");
-				}
-			}
-			strcpy_s(fileName, MAXPATHLEN, dirF);
-			strcpy_s(fileName + strlen(dirF), MAXPATHLEN - strlen(dirF), ((FilePkgHead*)pkg.data)->file_name);
-			file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-			if (file == INVALID_HANDLE_VALUE) {
-				std::string fileNameExt = getFileNameExt(fileName);
-				std::string fileNamePart = getFileNamePart(fileName);
-				for (int i = 0; i < MAXTRYTIME; ++i) {
-					strcpy_s(fileName, MAXPATHLEN, (fileNamePart + "(" + std::to_string(i) + ")." + fileNameExt).c_str());
-					file = CreateFileA(fileName, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-					if (file != INVALID_HANDLE_VALUE) {
-						goto openFileSucc;
-					}
-				}
-				return FILETRANSERROR::FILEOPENERROR;
-			openFileSucc:
-				++curr_pkg;
-			}
-		}
-		else if (pkg.flag == FLAG_FILE_DATA) {
-			if (pkg.curr_pkg_num == curr_pkg) {
-				DWORD writeSize = 0;
-				if (!WriteFile(file, pkg.data, pkg.curr_pkg_length, &writeSize, NULL)) {
-					CloseHandle(file);
-					return FILETRANSERROR::FILEWRITEERROR;
-				}
-				if (writeSize != pkg.curr_pkg_length) {
-					CloseHandle(file);
-					return FILETRANSERROR::FILEWRITEERROR;
-				}
-				if (buf[curr_pkg].curr_pkg_num == buf[curr_pkg].total_pkg_num) {
-					CloseHandle(file);
-					return FILETRANSERROR::NOERR;
-				}
-				++curr_pkg;
-				while (buf.find(curr_pkg)!=buf.end()) {
-					if (!WriteFile(file, buf[curr_pkg].data, buf[curr_pkg].curr_pkg_length, &writeSize, NULL)) {
-						CloseHandle(file);
-						return FILETRANSERROR::FILEWRITEERROR;
-					}
-					if (writeSize != buf[curr_pkg].curr_pkg_length) {
-						CloseHandle(file);
-						return FILETRANSERROR::FILEWRITEERROR;
-					}
-					if (buf[curr_pkg].curr_pkg_num == buf[curr_pkg].total_pkg_num) {
-						CloseHandle(file);
-						return FILETRANSERROR::NOERR;
-					}
-					buf.erase(curr_pkg);
-					++curr_pkg;
-				}
-			}
-			else if (pkg.curr_pkg_num > curr_pkg) {
-				buf[pkg.curr_pkg_num] = pkg;
-				pkg.flag = FLAG_LOSS_PKG;
-				pkg.curr_pkg_num = curr_pkg;
-				UDPSend(sock, (const char*)&pkg, sizeof(UDPFilePkg), &sockaddr, sizeof(sockaddr));
-			}
-		}
-		else if (pkg.flag==FLAG_DISCONNECT) {
-			if (file != INVALID_HANDLE_VALUE) {
-				CloseHandle(file);
-			}
-			return FILETRANSERROR::SOCKETERROR;
-		}
-		len = sizeof(UDPFilePkg);
-	}
-	return FILETRANSERROR::ALLSOCKETERROR;
-}
